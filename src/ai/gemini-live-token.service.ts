@@ -59,12 +59,11 @@ export class GeminiLiveTokenService {
           model,
           config: liveConfig,
         },
-        lockAdditionalFields: [
-          'responseModalities',
-          'mediaResolution',
-          'systemInstruction',
-          'sessionResumption',
-        ],
+        // Empty array = lock exactly the fields set in liveConnectConstraints
+        // (model, modalities, resolution, system instruction, resumption).
+        // Listing field names here breaks: the SDK emits invalid mask paths
+        // (e.g. bare "mediaResolution") and Gemini rejects the request.
+        lockAdditionalFields: [],
       },
     });
 
