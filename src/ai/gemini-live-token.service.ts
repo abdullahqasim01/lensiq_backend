@@ -8,6 +8,13 @@ import {
 
 import type { AuthenticatedUser } from '../auth/auth.types';
 
+export interface CreateTokenOptions {
+  /** Overrides the default assistant system instruction (e.g. per AI mode). */
+  systemInstruction?: string;
+  /** Overrides the default `['AUDIO']` response modality. */
+  responseModalities?: Array<'AUDIO' | 'TEXT'>;
+}
+
 export interface GeminiLiveTokenResponse {
   token: string;
   model: string;
@@ -29,7 +36,10 @@ export interface GeminiLiveTokenResponse {
 export class GeminiLiveTokenService {
   private client?: GoogleGenAI;
 
-  async createToken(user: AuthenticatedUser): Promise<GeminiLiveTokenResponse> {
+  async createToken(
+    user: AuthenticatedUser,
+    options: CreateTokenOptions = {},
+  ): Promise<GeminiLiveTokenResponse> {
     const model =
       process.env.GEMINI_LIVE_MODEL ?? 'gemini-3.1-flash-live-preview';
     const uses = readPositiveInt('GEMINI_LIVE_TOKEN_USES', 1);
@@ -42,10 +52,21 @@ export class GeminiLiveTokenService {
     );
     const expiresAt = toFutureIso(tokenLifetimeSeconds);
     const newSessionExpiresAt = toFutureIso(newSessionSeconds);
+    // The token below is minted with `lockAdditionalFields: []`, which locks
+    // the session to *exactly* the config set here — a client connecting
+    // with this token cannot override systemInstruction/responseModalities
+    // in its own `setup` message, the server just enforces what was minted.
+    // So per-mode behavior (translate/meeting having a different system
+    // instruction or a text-only response) has to be requested here, at
+    // token-mint time, not left to the client's setup message.
+    const responseModalities = (options.responseModalities ?? ['AUDIO']).map(
+      (modality) => (modality === 'TEXT' ? Modality.TEXT : Modality.AUDIO),
+    );
     const liveConfig: LiveConnectConfig = {
-      responseModalities: [Modality.AUDIO],
+      responseModalities,
       mediaResolution: MediaResolution.MEDIA_RESOLUTION_LOW,
       systemInstruction:
+        options.systemInstruction ??
         'You are Lensiq, a concise voice assistant for smart glasses. Answer naturally for spoken playback.',
       sessionResumption: {},
     };
@@ -80,7 +101,7 @@ export class GeminiLiveTokenService {
       newSessionExpiresAt,
       uses,
       config: {
-        responseModalities: ['AUDIO'],
+        responseModalities: options.responseModalities ?? ['AUDIO'],
         mediaResolution: 'MEDIA_RESOLUTION_LOW',
         sessionResumption: true,
       },
