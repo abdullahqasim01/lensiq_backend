@@ -13,6 +13,11 @@ export interface CreateTokenOptions {
   systemInstruction?: string;
   /** Overrides the default `['AUDIO']` response modality. */
   responseModalities?: Array<'AUDIO' | 'TEXT'>;
+  /** Overrides the default `MEDIA_RESOLUTION_LOW` vision quality/speed tradeoff. */
+  mediaResolution?:
+    | 'MEDIA_RESOLUTION_LOW'
+    | 'MEDIA_RESOLUTION_MEDIUM'
+    | 'MEDIA_RESOLUTION_HIGH';
 }
 
 export interface GeminiLiveTokenResponse {
@@ -54,17 +59,21 @@ export class GeminiLiveTokenService {
     const newSessionExpiresAt = toFutureIso(newSessionSeconds);
     // The token below is minted with `lockAdditionalFields: []`, which locks
     // the session to *exactly* the config set here — a client connecting
-    // with this token cannot override systemInstruction/responseModalities
-    // in its own `setup` message, the server just enforces what was minted.
-    // So per-mode behavior (translate/meeting having a different system
-    // instruction or a text-only response) has to be requested here, at
-    // token-mint time, not left to the client's setup message.
+    // with this token cannot override systemInstruction/responseModalities/
+    // mediaResolution in its own `setup` message, the server just enforces
+    // what was minted. So per-mode behavior (translate/meeting having a
+    // different system instruction or a text-only response) and per-user
+    // vision-quality preference have to be requested here, at token-mint
+    // time, not left to the client's setup message. `speechConfig` (voice
+    // selection) is deliberately NOT set here, so it stays unlocked and the
+    // client's own setup message controls it freely.
     const responseModalities = (options.responseModalities ?? ['AUDIO']).map(
       (modality) => (modality === 'TEXT' ? Modality.TEXT : Modality.AUDIO),
     );
+    const mediaResolution = mapMediaResolution(options.mediaResolution);
     const liveConfig: LiveConnectConfig = {
       responseModalities,
-      mediaResolution: MediaResolution.MEDIA_RESOLUTION_LOW,
+      mediaResolution,
       systemInstruction:
         options.systemInstruction ??
         'You are Lensiq, a concise voice assistant for smart glasses. Answer naturally for spoken playback.',
@@ -102,7 +111,7 @@ export class GeminiLiveTokenService {
       uses,
       config: {
         responseModalities: options.responseModalities ?? ['AUDIO'],
-        mediaResolution: 'MEDIA_RESOLUTION_LOW',
+        mediaResolution: options.mediaResolution ?? 'MEDIA_RESOLUTION_LOW',
         sessionResumption: true,
       },
       audio: {
@@ -140,4 +149,17 @@ function readPositiveInt(name: string, fallback: number): number {
 
 function toFutureIso(seconds: number): string {
   return new Date(Date.now() + seconds * 1000).toISOString();
+}
+
+function mapMediaResolution(
+  value: CreateTokenOptions['mediaResolution'],
+): MediaResolution {
+  switch (value) {
+    case 'MEDIA_RESOLUTION_MEDIUM':
+      return MediaResolution.MEDIA_RESOLUTION_MEDIUM;
+    case 'MEDIA_RESOLUTION_HIGH':
+      return MediaResolution.MEDIA_RESOLUTION_HIGH;
+    default:
+      return MediaResolution.MEDIA_RESOLUTION_LOW;
+  }
 }
